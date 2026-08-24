@@ -8,9 +8,10 @@ import secrets
 import threading
 import time
 import webbrowser
+from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
@@ -173,23 +174,61 @@ def _redact(message: str, secrets_to_hide: list[str]) -> str:
     return message
 
 
-class _CallbackHandler(BaseHTTPRequestHandler):
-    result: dict[str, str] = {}
+@dataclass
+class OAuthCallbackResult:
+    """Thread-safe hand-off from the local HTTP callback to the OAuth flow."""
 
+    parameters: dict[str, str] = field(default_factory=dict)
+    received: threading.Event = field(default_factory=threading.Event, repr=False)
+
+    def set_parameters(self, parameters: dict[str, str]) -> None:
+        if self.received.is_set():
+            return
+        self.parameters = parameters
+        self.received.set()
+
+
+class _CallbackHTTPServer(HTTPServer):
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        callback_handler: type[BaseHTTPRequestHandler],
+        callback_result: OAuthCallbackResult,
+    ) -> None:
+        super().__init__(server_address, callback_handler)
+        self.callback_result = callback_result
+
+
+class _CallbackHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         if parsed.path != "/callback":
             self.send_error(404)
             return
-        query = parse_qs(parsed.query)
-        self.result = {key: values[0] for key, values in query.items() if values}
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        parameters = {key: values[0] for key, values in query.items() if values}
+        server = cast(_CallbackHTTPServer, self.server)
+        server.callback_result.set_parameters(parameters)
+        response_body = b"Strava authorization received. You can close this window.\n"
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(response_body)))
         self.end_headers()
-        self.wfile.write(b"Strava authorization received. You can close this window.\n")
+        self.wfile.write(response_body)
 
     def log_message(self, format: str, *args: object) -> None:
         LOGGER.debug("OAuth callback: %s", format % args)
+
+
+def _validate_callback(parameters: dict[str, str], expected_state: str) -> dict[str, str]:
+    """Validate the OAuth callback before exchanging its authorization code."""
+    if parameters.get("state") != expected_state:
+        raise OAuthError("OAuth state verification failed")
+    if parameters.get("error"):
+        raise OAuthError(f"Strava authorization failed: {parameters['error']}")
+    if not parameters.get("code"):
+        raise OAuthError("Strava callback did not contain an authorization code")
+    return parameters
 
 
 def run_local_oauth(settings: Settings) -> TokenState:
@@ -201,26 +240,29 @@ def run_local_oauth(settings: Settings) -> TokenState:
     state = secrets.token_urlsafe(24)
     manager = OAuthManager(settings)
     url = manager.authorization_url(redirect_uri, state=state)
-    callback = _CallbackHandler
-    callback.result = {}
-    server = HTTPServer((settings.callback_host, settings.callback_port), callback)
-    thread = threading.Thread(target=server.handle_request, daemon=True)
+    callback_result = OAuthCallbackResult()
+    server = _CallbackHTTPServer(
+        (settings.callback_host, settings.callback_port), _CallbackHandler, callback_result
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    print(f"Opening Strava authorization in your browser: {url}")
-    if not webbrowser.open(url):
-        print("Open the URL above manually if the browser did not open.")
-    thread.join(timeout=300)
-    server.server_close()
-    if thread.is_alive():
-        raise OAuthError("Timed out waiting for the Strava OAuth callback")
-    result = callback.result
-    if result.get("state") != state:
-        raise OAuthError("OAuth state verification failed")
-    if result.get("error"):
-        raise OAuthError(f"Strava authorization failed: {result['error']}")
-    if not result.get("code"):
-        raise OAuthError("Strava callback did not contain an authorization code")
     try:
-        return asyncio.run(manager.exchange_code(result["code"], result.get("scope")))
+        print(f"Opening Strava authorization in your browser: {url}")
+        if not webbrowser.open(url):
+            print("Open the URL above manually if the browser did not open.")
+        if not callback_result.received.wait(timeout=300):
+            raise OAuthError("Timed out waiting for the Strava OAuth callback")
     finally:
-        asyncio.run(manager.close())
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+    result = _validate_callback(callback_result.parameters, state)
+
+    async def exchange_and_close() -> TokenState:
+        try:
+            return await manager.exchange_code(result["code"], result.get("scope"))
+        finally:
+            await manager.close()
+
+    return asyncio.run(exchange_and_close())

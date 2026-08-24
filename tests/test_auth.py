@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from pathlib import Path
 
 import httpx
 import pytest
 
-from strava_mcp.auth import OAuthError, OAuthManager, TokenState, TokenStore
+from strava_mcp.auth import (
+    OAuthCallbackResult,
+    OAuthError,
+    OAuthManager,
+    TokenState,
+    TokenStore,
+    _CallbackHandler,
+    _CallbackHTTPServer,
+    _validate_callback,
+)
 from strava_mcp.config import Settings
 from strava_mcp.openapi import ScopeRequirements
 
@@ -85,3 +95,53 @@ def test_token_store_does_not_expose_secrets_in_json_diagnostics(tmp_path: Path)
     payload = json.loads(path.read_text())
     assert payload["access_token"] == "access-secret"
     assert payload["refresh_token"] == "refresh-secret"
+
+
+def test_callback_with_correct_state_succeeds_and_recovers_code() -> None:
+    parameters = {"state": "expected-state", "code": "authorization-code", "scope": "activity:read"}
+
+    result = _validate_callback(parameters, "expected-state")
+
+    assert result["state"] == "expected-state"
+    assert result["code"] == "authorization-code"
+    assert result["scope"] == "activity:read"
+
+
+def test_callback_with_incorrect_state_fails() -> None:
+    with pytest.raises(OAuthError, match="state verification failed"):
+        _validate_callback(
+            {"state": "attacker-state", "code": "authorization-code"}, "expected-state"
+        )
+
+
+def test_local_callback_server_handles_normal_http_callback() -> None:
+    callback_result = OAuthCallbackResult()
+    server = _CallbackHTTPServer(("127.0.0.1", 0), _CallbackHandler, callback_result)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    try:
+        wrong_path = httpx.get(f"http://127.0.0.1:{port}/favicon.ico")
+        assert wrong_path.status_code == 404
+
+        response = httpx.get(
+            f"http://127.0.0.1:{port}/callback",
+            params={
+                "state": "expected-state",
+                "code": "authorization-code",
+                "scope": "activity:read activity:write",
+                "error_description": "",
+            },
+        )
+        assert response.status_code == 200
+        assert callback_result.received.wait(timeout=1)
+        assert callback_result.parameters == {
+            "state": "expected-state",
+            "code": "authorization-code",
+            "scope": "activity:read activity:write",
+            "error_description": "",
+        }
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
