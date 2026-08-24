@@ -1,0 +1,85 @@
+{
+  "swagger": "2.0",
+  "info": {"title": "Test API", "version": "1.0.0"},
+  "host": "example.test",
+  "basePath": "/api",
+  "schemes": ["https"],
+  "produces": ["application/json"],
+  "paths": {
+    "/items/{id}": {
+      "get": {
+        "operationId": "getItem",
+        "summary": "Get an item",
+        "description": "Returns one item.",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "type": "integer"},
+          {"name": "verbose", "in": "query", "type": "boolean", "default": false}
+        ],
+        "responses": {"200": {"description": "An item", "schema": {"$ref": "#/definitions/Item"}}}
+      },
+      "put": {
+        "operationId": "updateItem",
+        "summary": "Update an item",
+        "description": "Updates an item.",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "type": "integer"},
+          {"name": "body", "in": "body", "required": true, "schema": {"$ref": "#/definitions/UpdateItem"}}
+        ],
+        "responses": {"200": {"description": "Updated item", "schema": {"$ref": "#/definitions/Item"}}}
+      },
+      "delete": {
+        "operationId": "deleteItem",
+        "summary": "Delete an item",
+        "description": "Deletes an item.",
+        "parameters": [{"name": "id", "in": "path", "required": true, "type": "integer"}],
+        "responses": {"204": {"description": "Deleted"}}
+      }
+    },
+    "/items": {
+      "post": {
+        "operationId": "createItem",
+        "summary": "Create an item",
+        "description": "Creates an item.",
+        "consumes": ["application/x-www-form-urlencoded"],
+        "parameters": [
+          {"name": "name", "in": "formData", "required": true, "type": "string"},
+          {"name": "labels", "in": "formData", "type": "array", "collectionFormat": "csv", "items": {"type": "string"}}
+        ],
+        "responses": {"201": {"description": "Created", "schema": {"$ref": "#/definitions/Item"}}}
+      }
+    },
+    "/search": {
+      "get": {
+        "operationId": "searchItems",
+        "summary": "Search items",
+        "description": "Searches items.",
+        "parameters": [{"name": "q", "in": "query", "required": true, "type": "string"}],
+        "responses": {"200": {"description": "Results", "schema": {"type": "array", "items": {"$ref": "#/definitions/Item"}}}}
+      }
+    },
+    "/missing/{item_id}": {
+      "get": {
+        "operationId": "getMissingParam",
+        "summary": "Uses an inferred path parameter",
+        "description": "Tests a path parameter inferred from the template.",
+        "parameters": [],
+        "responses": {"200": {"description": "OK"}}
+      }
+    }
+  },
+  "definitions": {
+    "Item": {
+      "type": "object",
+      "properties": {"id": {"type": "integer"}, "name": {"type": "string"}}
+    },
+    "UpdateItem": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string", "description": "The item name"},
+        "description": {"type": "string"},
+        "status": {"type": "string", "enum": ["open", "closed"]},
+        "metadata": {"type": "object", "properties": {"source": {"type": "string"}}}
+      }
+    }
+  }
+}

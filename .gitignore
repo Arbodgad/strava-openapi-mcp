@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+dist/
+build/
+*.egg-info/
+.env
+.env.*
+
+# Local Strava credentials, tokens, and downloaded specs.
+credentials.json
+tokens.json
+openapi-refs/
+.config/
+
