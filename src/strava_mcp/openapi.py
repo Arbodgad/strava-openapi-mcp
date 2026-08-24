@@ -20,6 +20,29 @@ from .config import Settings
 LOGGER = logging.getLogger(__name__)
 HTTP_METHODS = ("get", "post", "put", "patch", "delete", "head", "options")
 OFFICIAL_SCHEMA_BASE = "https://developers.strava.com/swagger/"
+PARAMETER_SCHEMA_KEYS = {
+    "type",
+    "format",
+    "title",
+    "description",
+    "default",
+    "enum",
+    "items",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "multipleOf",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "minProperties",
+    "maxProperties",
+    "additionalProperties",
+}
 
 
 class SpecError(ValueError):
@@ -483,7 +506,18 @@ def _parameter_schema(bundle: SpecBundle, parameter: dict[str, Any]) -> dict[str
             "description": str(parameter.get("description") or "Path to the file to upload."),
             "x-strava-mcp-file": True,
         }
-    schema = parameter.get("schema") if parameter.get("in") == "body" else parameter
+    if parameter.get("in") == "body":
+        schema = parameter.get("schema")
+    else:
+        # Swagger 2.0 parameters contain transport metadata next to their
+        # schema.  Only copy JSON Schema keywords here; copying the complete
+        # parameter would incorrectly emit e.g. `required: true` inside
+        # `properties.<parameter>`, which is not valid JSON Schema.
+        schema = {
+            key: copy.deepcopy(parameter[key])
+            for key in PARAMETER_SCHEMA_KEYS
+            if key in parameter
+        }
     result = bundle.schema(schema)
     for key in ("enum", "default", "minimum", "maximum", "minItems", "maxItems", "format"):
         if key in parameter and key not in result:
@@ -571,6 +605,69 @@ def build_input_schema(parameters: list[ParameterBinding]) -> dict[str, Any]:
     if required:
         result["required"] = required
     return result
+
+
+def find_invalid_required_keywords(schema: Any) -> list[str]:
+    """Return JSON paths where the JSON Schema ``required`` keyword is invalid."""
+
+    invalid: list[str] = []
+
+    def walk(value: Any, path: tuple[str, ...]) -> None:
+        if not isinstance(value, dict):
+            if isinstance(value, list):
+                for index, child in enumerate(value):
+                    walk(child, path + (str(index),))
+            return
+
+        if "required" in value:
+            required = value["required"]
+            if not isinstance(required, list) or not all(
+                isinstance(item, str) for item in required
+            ):
+                invalid.append(".".join(path + ("required",)) or "required")
+
+        # `properties` is a map whose keys are user-defined property names.
+        # A property is allowed to be named `required`; it is not the JSON
+        # Schema keyword at this level.
+        properties = value.get("properties")
+        if isinstance(properties, dict):
+            for name, child in properties.items():
+                walk(child, path + ("properties", str(name)))
+
+        for key, child in value.items():
+            if key != "properties":
+                walk(child, path + (str(key),))
+
+    walk(schema, ())
+    return invalid
+
+
+def normalize_json_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Copy and validate a generated MCP input schema without changing semantics.
+
+    In particular, a user parameter named ``required`` remains under
+    ``properties``.  The function only rejects malformed JSON Schema keyword
+    values so generator regressions cannot reach an MCP client unnoticed.
+    """
+
+    normalized = copy.deepcopy(schema)
+    invalid = find_invalid_required_keywords(normalized)
+    if invalid:
+        locations = ", ".join(invalid[:5])
+        suffix = "" if len(invalid) <= 5 else ", ..."
+        raise SpecError(
+            "Generated input schema has an invalid JSON Schema `required` keyword at "
+            f"{locations}{suffix}"
+        )
+    try:
+        from jsonschema import Draft7Validator
+
+        Draft7Validator.check_schema(normalized)
+    except ImportError as exc:
+        raise SpecError("jsonschema is required to validate generated MCP schemas") from exc
+    except Exception as exc:
+        raise SpecError(f"Generated MCP input schema is invalid: {exc}") from exc
+    return normalized
 
 
 def build_operations(bundle: SpecBundle) -> list[Operation]:

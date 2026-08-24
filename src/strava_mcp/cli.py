@@ -10,7 +10,13 @@ import sys
 from . import __version__
 from .auth import OAuthError, run_local_oauth
 from .config import Settings
-from .openapi import SpecError, SpecStore, build_operations
+from .openapi import (
+    SpecError,
+    SpecStore,
+    build_operations,
+    find_invalid_required_keywords,
+    normalize_json_schema,
+)
 from .server import run_stdio
 
 
@@ -21,12 +27,22 @@ def _settings() -> Settings:
         raise SystemExit(f"Configuration error: {exc}") from exc
 
 
-def _list_tools(settings: Settings) -> int:
+def _list_tools(settings: Settings, include_schemas: bool = False) -> int:
     operations = build_operations(SpecStore(settings).load())
     for operation in operations:
         print(f"{operation.method.upper():6} {operation.path:35} {operation.tool_name}")
         description = " ".join(operation.description.split())
         print(f"       Description: {description}")
+        if include_schemas:
+            print("       Input schema:")
+            print(json.dumps(operation.input_schema, indent=2, ensure_ascii=False))
+            invalid = find_invalid_required_keywords(operation.input_schema)
+            if invalid:
+                print(f"       INVALID required keyword paths: {', '.join(invalid)}")
+            try:
+                normalize_json_schema(operation.input_schema)
+            except SpecError as exc:
+                print(f"       Schema validation: {exc}")
     print(f"\n{len(operations)} generated tools")
     return 0
 
@@ -40,7 +56,10 @@ def build_parser() -> argparse.ArgumentParser:
         "update-spec", help="Download, validate, and save the official Swagger spec"
     )
     subparsers.add_parser("show-config", help="Show effective non-secret configuration")
-    subparsers.add_parser("list-tools", help="List generated tools")
+    list_tools = subparsers.add_parser("list-tools", help="List generated tools")
+    list_tools.add_argument(
+        "--schemas", action="store_true", help="Include each generated MCP inputSchema"
+    )
     return parser
 
 
@@ -66,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(settings.safe_dict(), indent=2, ensure_ascii=False))
             return 0
         if args.command == "list-tools":
-            return _list_tools(settings)
+            return _list_tools(settings, include_schemas=args.schemas)
         asyncio.run(run_stdio(settings))
         return 0
     except (SpecError, OAuthError, OSError) as exc:

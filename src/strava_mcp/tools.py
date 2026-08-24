@@ -9,7 +9,7 @@ from jsonschema import Draft7Validator
 
 from .client import RequestArgumentError, StravaClient
 from .config import Settings
-from .openapi import Operation
+from .openapi import Operation, normalize_json_schema
 
 
 class ToolExecutionError(RuntimeError):
@@ -32,15 +32,18 @@ class DynamicToolRegistry:
     def mcp_tools(self) -> list[Any]:
         from mcp.types import Tool
 
-        return [
-            Tool(
-                name=operation.tool_name,
-                description=operation.description,
-                inputSchema=operation.input_schema,
+        tools = []
+        for operation in self.operations:
+            if not self._enabled(operation):
+                continue
+            tools.append(
+                Tool(
+                    name=operation.tool_name,
+                    description=operation.description,
+                    inputSchema=normalize_json_schema(operation.input_schema),
+                )
             )
-            for operation in self.operations
-            if self._enabled(operation)
-        ]
+        return tools
 
     def _enabled(self, operation: Operation) -> bool:
         if operation.category == "destructive":

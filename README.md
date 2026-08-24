@@ -207,7 +207,13 @@ strava-mcp auth             # OAuth navigateur + callback localhost
 strava-mcp update-spec      # mise à jour validée de la copie locale
 strava-mcp show-config      # configuration non secrète
 strava-mcp list-tools       # méthode, endpoint, tool et résumé
+strava-mcp list-tools --schemas  # affiche aussi chaque inputSchema JSON
 ```
+
+`list-tools --schemas` est utile pour diagnostiquer un client MCP qui refuse un
+schema. Les mots-clés JSON Schema comme `required` sont affichés au niveau du
+schema concerné ; une propriété Strava appelée `required` reste, elle, sous
+`properties`.
 
 ## Tests et développement
 
