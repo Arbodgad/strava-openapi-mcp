@@ -15,8 +15,8 @@ Strava’s currently published specification is Swagger 2.0, with `info.version`
 Python 3.12+ and [uv](https://docs.astral.sh/uv/) are recommended.
 
 ```bash
-git clone https://github.com/<USER>/<REPO>.git
-cd <REPO>
+git clone https://github.com/Arbodgad/strava-openapi-mcp.git
+cd strava-openapi-mcp
 uv sync
 uv run strava-mcp list-tools
 ```
@@ -123,14 +123,14 @@ STRAVA_OPENAPI_PATH="$HOME/.config/strava-mcp/openapi.json" strava-mcp update-sp
 The `pyproject.toml` declares the executable and all dependencies. No manual Python installation or clone is required:
 
 ```bash
-uvx --from git+https://github.com/<USER>/<REPO> strava-mcp auth
-uvx --from git+https://github.com/<USER>/<REPO> strava-mcp
+uvx --from git+https://github.com/Arbodgad/strava-openapi-mcp strava-mcp auth
+uvx --from git+https://github.com/Arbodgad/strava-openapi-mcp strava-mcp
 ```
 
 To immediately use a new commit despite the uv cache:
 
 ```bash
-uvx --refresh --from git+https://github.com/<USER>/<REPO> strava-mcp
+uvx --refresh --from git+https://github.com/Arbodgad/strava-openapi-mcp strava-mcp
 ```
 
 ## OpenCode configuration
@@ -145,7 +145,7 @@ Add the server to the OpenCode configuration:
       "command": [
         "uvx",
         "--from",
-        "git+https://github.com/<USER>/<REPO>",
+        "git+https://github.com/Arbodgad/strava-openapi-mcp",
         "strava-mcp"
       ],
       "enabled": true
