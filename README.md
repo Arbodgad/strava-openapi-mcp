@@ -1,18 +1,18 @@
 # strava-openapi-mcp
 
-Serveur MCP local en Python qui agit comme proxy générique entre un client MCP (notamment OpenCode) et l’API REST Strava. Les tools ne sont pas codés endpoint par endpoint : ils sont générés au démarrage à partir de la spécification officielle Swagger 2.0 de Strava.
+Local Python MCP server acting as a generic proxy between an MCP client—especially OpenCode—and the Strava REST API. Tools are not implemented endpoint by endpoint: they are generated at startup from Strava’s official Swagger 2.0 specification.
 
-Le dépôt contient une copie de la spec et de ses documents de schémas référencés. Le démarrage ne nécessite donc pas Internet pour construire la liste des tools. La commande `update-spec` permet de rafraîchir la copie utilisateur après validation.
+The repository contains a copy of the specification and its referenced schema documents. Startup therefore does not require Internet access to build the tool list. The `update-spec` command refreshes the user copy after validation.
 
 ## Architecture
 
-`openapi.py` charge/valide le Swagger, résout les références locales et normalise les opérations. `tools.py` transforme chaque opération en tool MCP avec un JSON Schema généré. `client.py` construit les URL, paramètres, bodies JSON et formulaires multipart sans connaître les endpoints Strava. `auth.py` gère le flux OAuth local et le renouvellement des tokens. `server.py` expose le tout sur MCP stdio et `cli.py` fournit les commandes de maintenance.
+`openapi.py` loads and validates Swagger, resolves local references, and normalizes operations. `tools.py` transforms each operation into an MCP tool with a generated JSON Schema. `client.py` builds URLs, parameters, JSON bodies, and multipart forms without knowing Strava endpoints individually. `auth.py` handles the local OAuth flow and token refresh. `server.py` exposes everything over MCP stdio, while `cli.py` provides maintenance commands.
 
-La spec actuellement publiée par Strava est Swagger 2.0, `info.version` `3.0.0`. Le bundle est volontairement traité comme une donnée remplaçable : si un nouvel endpoint apparaît dans la spec, il est découvert automatiquement.
+Strava’s currently published specification is Swagger 2.0, with `info.version` `3.0.0`. The bundle is intentionally treated as replaceable data: if a new endpoint appears in the specification, it is discovered automatically.
 
-## Pré-requis et installation locale
+## Prerequisites and local installation
 
-Python 3.12+ et [uv](https://docs.astral.sh/uv/) sont recommandés.
+Python 3.12+ and [uv](https://docs.astral.sh/uv/) are recommended.
 
 ```bash
 git clone https://github.com/<USER>/<REPO>.git
@@ -21,28 +21,28 @@ uv sync
 uv run strava-mcp list-tools
 ```
 
-Le serveur MCP lui-même se lance ainsi et reste actif sur stdin/stdout MCP :
+Start the MCP server with:
 
 ```bash
 uv run strava-mcp
 ```
 
-Les logs applicatifs vont sur stderr. Aucun log de diagnostic ne doit être écrit sur stdout pendant le transport stdio.
+The server remains active on the MCP stdin/stdout transport. Application logs are sent to stderr. No diagnostic log must be written to stdout during stdio transport.
 
-## Créer l’application Strava
+## Create a Strava application
 
-1. Ouvrir `https://www.strava.com/settings/api`.
-2. Créer une application et relever son **Client ID** et son **Client Secret**.
-3. `localhost` et `127.0.0.1` sont acceptés comme domaines de callback par Strava. Le callback utilisé par défaut est `http://127.0.0.1:8765/callback`.
+1. Open `https://www.strava.com/settings/api`.
+2. Create an application and note its **Client ID** and **Client Secret**.
+3. Strava accepts `localhost` and `127.0.0.1` as callback domains. The default callback is `http://127.0.0.1:8765/callback`.
 
-Les credentials peuvent être fournis par environnement :
+Credentials can be provided through the environment:
 
 ```bash
 export STRAVA_CLIENT_ID="..."
 export STRAVA_CLIENT_SECRET="..."
 ```
 
-Ou dans `~/.config/strava-mcp/credentials.json` avec les permissions `0600` :
+Or in `~/.config/strava-mcp/credentials.json` with `0600` permissions:
 
 ```json
 {
@@ -51,48 +51,48 @@ Ou dans `~/.config/strava-mcp/credentials.json` avec les permissions `0600` :
 }
 ```
 
-L’environnement est prioritaire. Le secret n’est jamais affiché ni écrit dans les logs.
+Environment variables take precedence. The secret is never displayed or written to logs.
 
 ## OAuth
 
-Lancer une fois :
+Run once:
 
 ```bash
 strava-mcp auth
 ```
 
-Le navigateur ouvre la page Strava, puis le callback local échange le code contre `access_token`, `refresh_token`, `expires_at` et les scopes effectivement accordés. Les tokens sont stockés dans `~/.config/strava-mcp/tokens.json` avec permissions `0600`. Le serveur renouvelle automatiquement l’access token expiré et persiste le refresh token éventuellement rotatif renvoyé par Strava.
+The browser opens the Strava authorization page. The local callback exchanges the authorization code for `access_token`, `refresh_token`, `expires_at`, and the granted scopes. Tokens are stored in `~/.config/strava-mcp/tokens.json` with `0600` permissions. The server automatically refreshes expired access tokens and persists a rotating refresh token when Strava returns one.
 
-Par défaut, tous les scopes déclarés par la spec sont demandés. Pour demander un sous-ensemble :
+By default, all scopes declared by the specification are requested. To request a subset:
 
 ```bash
 export STRAVA_OAUTH_SCOPES="activity:read,activity:write"
 ```
 
-Les descriptions officielles sont analysées pour déduire les scopes explicites. Les endpoints de lecture qui acceptent `activity:read` ou `activity:read_all` sont représentés comme une alternative. Un scope conditionnel (par exemple `activity:read_all` pour une activité privée) est indiqué au LLM et l’erreur Strava reste visible.
+Official descriptions are analyzed to infer explicit scopes. Read endpoints accepting either `activity:read` or `activity:read_all` are represented as alternatives. A conditional scope—such as `activity:read_all` for a private activity—is shown to the LLM, and the original Strava error remains visible.
 
 ## Configuration
 
-Variables supportées :
+Supported variables:
 
-| Variable | Défaut |
+| Variable | Default |
 | --- | --- |
-| `STRAVA_CLIENT_ID` | aucun, ou `credentials.json` |
-| `STRAVA_CLIENT_SECRET` | aucun, ou `credentials.json` |
+| `STRAVA_CLIENT_ID` | none, or `credentials.json` |
+| `STRAVA_CLIENT_SECRET` | none, or `credentials.json` |
 | `STRAVA_API_BASE_URL` | `https://www.strava.com/api/v3` |
 | `STRAVA_OPENAPI_URL` | `https://developers.strava.com/swagger/swagger.json` |
 | `STRAVA_OPENAPI_PATH` | `~/.config/strava-mcp/openapi.json` |
 | `STRAVA_ALLOW_WRITE` | `true` |
 | `STRAVA_ALLOW_DELETE` | `false` |
 | `STRAVA_LOG_LEVEL` | `INFO` |
-| `STRAVA_OAUTH_SCOPES` | tous les scopes Strava déclarés |
+| `STRAVA_OAUTH_SCOPES` | all declared Strava scopes |
 | `STRAVA_CALLBACK_HOST` / `STRAVA_CALLBACK_PORT` | `127.0.0.1` / `8765` |
 
-Les alias `STRAVA_MCP_ALLOW_WRITE` et `STRAVA_MCP_ALLOW_DELETE` sont également acceptés. `strava-mcp show-config` affiche uniquement une vue non secrète de la configuration.
+The aliases `STRAVA_MCP_ALLOW_WRITE` and `STRAVA_MCP_ALLOW_DELETE` are also accepted. `strava-mcp show-config` displays only a non-secret configuration view.
 
-Les valeurs recommandées sont `STRAVA_ALLOW_WRITE=true` et `STRAVA_ALLOW_DELETE=false`. Les méthodes POST, PUT et PATCH ne sont pas bloquées par défaut. Les méthodes DELETE sont générées lorsque la spec les contient, mais filtrées de la liste MCP tant que `STRAVA_ALLOW_DELETE=false`.
+The recommended values are `STRAVA_ALLOW_WRITE=true` and `STRAVA_ALLOW_DELETE=false`. POST, PUT, and PATCH methods are not blocked by default. DELETE methods are generated when the specification contains them, but filtered from the MCP tool list while `STRAVA_ALLOW_DELETE=false`.
 
-## Premier démarrage
+## First startup
 
 ```bash
 export STRAVA_CLIENT_ID="..."
@@ -102,40 +102,40 @@ strava-mcp list-tools
 strava-mcp
 ```
 
-La copie utilisateur de la spec est privilégiée. Si elle n’existe pas, le bundle officiel embarqué est utilisé, sans téléchargement au démarrage.
+The user specification copy takes precedence. If it does not exist, the bundled official specification is used without downloading anything at startup.
 
-## Mise à jour de la spec
+## Update the specification
 
 ```bash
 strava-mcp update-spec
 ```
 
-La commande télécharge `STRAVA_OPENAPI_URL`, valide le Swagger puis télécharge les documents JSON référencés. La copie existante n’est remplacée qu’après réussite complète du téléchargement et de la validation. La version annoncée et le nombre de schémas référencés sont affichés.
+The command downloads `STRAVA_OPENAPI_URL`, validates the Swagger document, and then downloads referenced JSON documents. The existing copy is replaced only after the entire download and validation process succeeds. The reported version and number of referenced schemas are displayed.
 
-Pour forcer un chemin différent :
+To force a different path:
 
 ```bash
 STRAVA_OPENAPI_PATH="$HOME/.config/strava-mcp/openapi.json" strava-mcp update-spec
 ```
 
-## Installation directe avec uvx depuis Git
+## Direct installation with uvx from Git
 
-Le `pyproject.toml` déclare le script et toutes les dépendances. Une installation Python manuelle ou un clone ne sont pas nécessaires :
+The `pyproject.toml` declares the executable and all dependencies. No manual Python installation or clone is required:
 
 ```bash
 uvx --from git+https://github.com/<USER>/<REPO> strava-mcp auth
 uvx --from git+https://github.com/<USER>/<REPO> strava-mcp
 ```
 
-Pour prendre immédiatement un nouveau commit malgré le cache uv :
+To immediately use a new commit despite the uv cache:
 
 ```bash
 uvx --refresh --from git+https://github.com/<USER>/<REPO> strava-mcp
 ```
 
-## Configuration OpenCode
+## OpenCode configuration
 
-Ajouter le serveur dans la configuration OpenCode :
+Add the server to the OpenCode configuration:
 
 ```json
 {
@@ -154,13 +154,13 @@ Ajouter le serveur dans la configuration OpenCode :
 }
 ```
 
-Exporter les variables dans l’environnement qui lance OpenCode, ou utiliser `credentials.json`, plutôt que de committer les secrets dans ce fichier. Exécuter `strava-mcp auth` une fois avec le même compte local avant de démarrer OpenCode.
+Export the variables in the environment that launches OpenCode, or use `credentials.json`, instead of committing secrets to this file. Run `strava-mcp auth` once for the same local account before starting OpenCode.
 
-## Tools générés et exemples
+## Generated tools and examples
 
-Les noms viennent de `operationId`, normalisé en snake case, avec le préfixe HTTP seulement lorsque nécessaire pour éviter une ambiguïté. Par exemple, avec la spec actuelle :
+Names are derived from `operationId`, normalized to snake case, with an HTTP method prefix added only when necessary to avoid ambiguity. For example, with the current specification:
 
-| Endpoint | Tool généré actuel |
+| Endpoint | Current generated tool |
 | --- | --- |
 | `GET /athlete` | `get_logged_in_athlete` |
 | `GET /athlete/activities` | `get_logged_in_athlete_activities` |
@@ -169,27 +169,27 @@ Les noms viennent de `operationId`, normalisé en snake case, avec le préfixe H
 | `GET /activities/{id}/streams` | `get_activity_streams` |
 | `GET /athletes/{id}/stats` | `get_stats` |
 
-Les paramètres du body `UpdatableActivity` sont aplatis dans le tool PUT. L’agent peut donc appeler conceptuellement :
+The `UpdatableActivity` body parameters are flattened into the PUT tool. The agent can therefore make conceptually equivalent calls:
 
 ```text
-put_update_activity_by_id(id=123456789, name="Sortie longue Z2")
-put_update_activity_by_id(id=123456789, description="Séance réalisée en endurance fondamentale, sensations bonnes.")
+put_update_activity_by_id(id=123456789, name="Long Z2 run")
+put_update_activity_by_id(id=123456789, description="Easy aerobic endurance session, good sensations.")
 ```
 
-Autres exemples de demandes naturelles :
+Other examples of natural-language requests:
 
-- « Liste mes dernières activités de course à pied » : utiliser `get_logged_in_athlete_activities`, puis filtrer les résultats retournés.
-- « Lis le détail de l’activité 123 » : utiliser `get_activity_by_id(id=123)`.
-- « Récupère les streams distance et heartrate de 123 » : utiliser `get_activity_streams(id=123, keys=["distance", "heartrate"], key_by_type=true)`.
-- « Récupère mes statistiques » : obtenir l’athlète authentifié puis utiliser `get_stats(id=...)`.
+- “List my latest running activities”: use `get_logged_in_athlete_activities`, then filter the returned results.
+- “Read the details of activity 123”: use `get_activity_by_id(id=123)`.
+- “Get the distance and heartrate streams for 123”: use `get_activity_streams(id=123, keys=["distance", "heartrate"], key_by_type=true)`.
+- “Get my statistics”: obtain the authenticated athlete, then use `get_stats(id=...)`.
 
-La pagination est entièrement pilotée par les paramètres de la spec (`page`, `per_page`, `before`, `after`, `page_size`, `after_cursor`, etc.). Le serveur ne lance jamais automatiquement une longue série de pages.
+Pagination is fully controlled by the parameters in the specification (`page`, `per_page`, `before`, `after`, `page_size`, `after_cursor`, and so on). The server never automatically starts a long sequence of page requests.
 
-## Écritures et opérations dangereuses
+## Writes and dangerous operations
 
-Les descriptions MCP indiquent `This operation modifies Strava data` pour POST/PUT/PATCH et `WARNING` pour DELETE. Si `STRAVA_ALLOW_WRITE=false`, les tools d’écriture répondent avec une erreur explicite. Si `STRAVA_ALLOW_DELETE=false`, les DELETE sont absents de `list_tools` et un appel direct est refusé.
+MCP descriptions include `This operation modifies Strava data` for POST/PUT/PATCH and `WARNING` for DELETE. If `STRAVA_ALLOW_WRITE=false`, write tools return an explicit error. If `STRAVA_ALLOW_DELETE=false`, DELETE tools are absent from `list_tools` and direct calls are rejected.
 
-Les erreurs HTTP conservent le statut, l’endpoint, le message Strava et les headers de limitation disponibles, par exemple :
+HTTP errors preserve the status, endpoint, Strava message, and available rate-limit headers, for example:
 
 ```text
 HTTP 401 Unauthorized
@@ -197,42 +197,41 @@ Endpoint: PUT /activities/{id}
 Message: Invalid or expired token
 ```
 
-Une réponse 204 devient un objet minimal `{ "status": "success", "http_status": 204 }`. Les réponses JSON gardent les noms de champs Strava.
+A 204 response becomes the minimal object `{ "status": "success", "http_status": 204 }`. JSON responses retain Strava field names.
 
-## Commandes CLI
+## CLI commands
 
 ```text
-strava-mcp                  # serveur MCP stdio
-strava-mcp auth             # OAuth navigateur + callback localhost
-strava-mcp update-spec      # mise à jour validée de la copie locale
-strava-mcp show-config      # configuration non secrète
-strava-mcp list-tools       # méthode, endpoint, tool et résumé
-strava-mcp list-tools --schemas  # affiche aussi chaque inputSchema JSON
+strava-mcp                       # MCP stdio server
+strava-mcp auth                  # Browser OAuth + localhost callback
+strava-mcp update-spec           # Validated update of the local copy
+strava-mcp show-config           # Non-secret configuration
+strava-mcp list-tools            # Method, endpoint, tool, and summary
+strava-mcp list-tools --schemas  # Also display each inputSchema JSON
 ```
 
-`list-tools --schemas` est utile pour diagnostiquer un client MCP qui refuse un
-schema. Les mots-clés JSON Schema comme `required` sont affichés au niveau du
-schema concerné ; une propriété Strava appelée `required` reste, elle, sous
-`properties`.
+`list-tools --schemas` is useful for diagnosing an MCP client that rejects a
+schema. JSON Schema keywords such as `required` are displayed at the relevant
+schema level; a Strava property named `required` remains under `properties`.
 
-## Tests et développement
+## Tests and development
 
 ```bash
 uv run pytest
 uv run ruff check .
 ```
 
-Les tests utilisent des transports HTTP mockés et ne contactent pas Strava. Le test d’intégration contre Strava n’est volontairement pas exécuté automatiquement.
+Tests use mocked HTTP transports and do not contact Strava. Integration tests against Strava are intentionally not run automatically.
 
 ## Troubleshooting
 
-- `No Strava authorization found` : exécuter `strava-mcp auth` avec les credentials corrects.
-- `OAuth scope missing` : refaire `strava-mcp auth` avec le scope demandé dans `STRAVA_OAUTH_SCOPES`.
-- `Spec update aborted` : la copie locale précédente reste intacte ; vérifier le réseau ou revenir à `STRAVA_OPENAPI_PATH` non personnalisé.
-- Aucun tool DELETE : c’est le comportement par défaut ; définir `STRAVA_ALLOW_DELETE=true` et redémarrer.
-- Erreur MCP liée à stdout : ne pas ajouter de `print` dans le code du serveur ; les logs doivent utiliser logging, configuré sur stderr.
-- Port OAuth occupé : définir `STRAVA_CALLBACK_PORT` sur un port libre et enregistrer le domaine localhost dans l’application Strava si nécessaire.
+- `No Strava authorization found`: run `strava-mcp auth` with the correct credentials.
+- `OAuth scope missing`: run `strava-mcp auth` again with the scope requested in `STRAVA_OAUTH_SCOPES`.
+- `Spec update aborted`: the previous local copy remains intact; check the network or remove a custom `STRAVA_OPENAPI_PATH`.
+- No DELETE tools: this is the default behavior; set `STRAVA_ALLOW_DELETE=true` and restart.
+- MCP error related to stdout: do not add `print` calls to server code; logs must use logging configured for stderr.
+- OAuth port already in use: set `STRAVA_CALLBACK_PORT` to an available port and, if necessary, register the localhost domain in the Strava application.
 
-## Sécurité
+## Security
 
-Le client secret, l’access token et le refresh token ne sont jamais inclus dans les logs, descriptions MCP ou messages d’erreur. Les fichiers locaux de credentials et tokens sont ignorés par Git et écrits avec permissions `0600`. Ne jamais committer `.env`, `credentials.json` ou `tokens.json`.
+The client secret, access token, and refresh token are never included in logs, MCP descriptions, or error messages. Local credential and token files are ignored by Git and written with `0600` permissions. Never commit `.env`, `credentials.json`, or `tokens.json`.
